@@ -1,0 +1,269 @@
+---
+title: "scRNAseq_integrated_analysis_diff_expression_between_conditions_per_cluster_workflow"
+author: "Pavan Nayak"
+date: "11/17/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#Here is the code to look at differential expression of genes for each cluster, and label all the most expressed genes
+#between conditions for each cluster
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(data.table)
+# first, load your UMAP seurat object, in this script it is entitled wt_cacnb1_integ_label_p5
+integ_cluster_idents <- unique(Idents(wt_cacnb1_integ_label_p5)) #This will give you the names of the cl
+```
+
+```{r}
+
+#IGNORE PREVIOUS SCRIPTS, THE BELOW SCRIPT WORKS BEST
+tendon_1.cells <- subset(wt_cacnb1_integ_label_p5, idents = "Tendon-1")
+Idents(tendon_1.cells) <- "orig.ident"
+avg.tendon_1.cells <- as.data.frame(log1p(AverageExpression(tendon_1.cells, verbose = FALSE)$RNA))
+avg.tendon_1.cells$gene <- rownames(avg.tendon_1.cells)
+
+
+
+x4 <- as.data.frame(log1p(AverageExpression(tendon_1.cells, verbose = FALSE)$RNA))
+x4 <- data.table::as.data.table(x4, keep.rownames = TRUE)
+x4$wtpet <- (x4$wtten)/(x4$petten)
+x4$petwt <- (x4$petten)/(x4$wtten)
+
+#get all genes with avg expression greater than one, eliminating all genes with absolute value of (wt/pet) as Infinite(e.g. divide by zero), then add those labels to the plot for wt
+x4 <- as.data.table(x4)[is.finite(wtpet)]
+x4 <- x4[ !(wtten < 1),] 
+x4 <- x4 %>% arrange(desc(abs(wtpet)))
+genes.to.label <- head(x4$rn, n=40)
+p1 <- ggplot(avg.tendon_1.cells, aes(wtten, petten)) + geom_point(colour="red") + ggtitle("Tendon_1 Subcluster WT")
+p1 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+p1
+
+#get all genes with avg expression greater than one, eliminating all genes with absolute value of (pet/wt) as Infinite(e.g. divide by zero), then add those labels to the plot for petrified
+x4 <- x4 %>% arrange(desc(abs(petwt)))
+x4 <- as.data.table(x4)[is.finite(petwt)]
+x4 <- x4[ !(petten < 1),] 
+x4 <- x4 %>% arrange(desc(abs(petwt)))
+genes.to.label <- head(x4$rn, n=40)
+p1 <- ggplot(avg.tendon_1.cells, aes(wtten, petten)) + geom_point(colour="red") + ggtitle("Tendon_1 Subcluster cacnb1")
+p1 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+p1
+
+```
+
+
+
+```{r}
+
+#FUNCTIONs for plotting inter-condition differences PER CLUSTER
+
+control_diff_exp_label <- function(combined_seurat_object, cluster_name, expression_filter_number, no_genes_label) {
+  
+cells <- subset(combined_seurat_object, idents = cluster_name)
+Idents(cells) <- "orig.ident"
+avg.cells <- as.data.frame(log1p(AverageExpression(cells, verbose = FALSE)$RNA))
+avg.cells$gene <- rownames(avg.cells)
+
+x4 <- as.data.frame(log1p(AverageExpression(cells, verbose = FALSE)$RNA))
+x4 <- data.table::as.data.table(x4, keep.rownames = TRUE)
+x4$contexp <- (x4$wtten)/(x4$petten)
+#get all genes with avg expression greater than one, eliminating all genes with absolute value of (wt/pet) as Infinite(e.g. divide by zero), then add those labels to the plot for wt
+x4 <- as.data.table(x4)[is.finite(contexp)]
+x4 <- x4[ !(wtten < expression_filter_number),] 
+x4 <- x4 %>% arrange(desc(abs(contexp)))
+genes.to.label <- head(x4$rn, n=no_genes_label)
+p1 <- ggplot(avg.cells, aes(wtten, petten)) + geom_point(colour="red") + ggtitle(paste(cluster_name, "Subcluster_WT", sep = " "))
+p1 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+p1
+
+}
+
+
+
+petrified_diff_exp_label<- function(combined_seurat_object, cluster_name, expression_filter_number, no_genes_label){
+
+cells <- subset(combined_seurat_object, idents = cluster_name)
+Idents(cells) <- "orig.ident"
+avg.cells <- as.data.frame(log1p(AverageExpression(cells, verbose = FALSE)$RNA))
+avg.cells$gene <- rownames(avg.cells)
+
+x4 <- as.data.frame(log1p(AverageExpression(cells, verbose = FALSE)$RNA))
+x4 <- data.table::as.data.table(x4, keep.rownames = TRUE)
+x4$contexp <- (x4$petten)/(x4$wtten)
+#get all genes with avg expression greater than one, eliminating all genes with absolute value of (wt/pet) as Infinite(e.g. divide by zero), then add those labels to the plot for wt
+x4 <- as.data.table(x4)[is.finite(contexp)]
+x4 <- x4[ !(petten < expression_filter_number),] 
+x4 <- x4 %>% arrange(desc(abs(contexp)))
+genes.to.label <- head(x4$rn, n=no_genes_label)
+p1 <- ggplot(avg.cells, aes(wtten, petten)) + geom_point(colour="red") + ggtitle(paste(cluster_name, "Subcluster_cacnb1", sep = " "))
+p1 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+p1
+
+}
+control_diff_exp_label(wt_cacnb1_integ_label_p5, "Tendon-1", 1, 40)  +petrified_diff_exp_label(wt_cacnb1_integ_label_p5, "Tendon-1", 1, 40)
+```
+
+
+```{r}
+#for plotting inter-condition differences PER CLUSTER
+ diff_cart.cells <- subset(wt_cacnb1_integ_label_p5,  idents  = "Diff Cart")
+ Idents(diff_cart.cells) <- "orig.ident"
+ avg.diff_cart.cells <- as.data.frame(log1p(AverageExpression(diff_cart.cells, verbose = FALSE)$RNA))
+ avg.diff_cart.cells$gene <- rownames(avg.diff_cart.cells)
+ genes.to.label <- top30_diff_exp_subcluster_Diff_Cart
+ p1 <- ggplot(avg.diff_cart.cells, aes(wtten, petten)) + geom_point(colour="red") + ggtitle("Diff Cart Cell Subcluster")
+ p1 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+```
+
+```{r}
+#functions for generating inter-condition gene differences for combined WHOLE dataset (NOT PER CLUSTER)
+
+wt_btx_diff_exp_label_combined<- function(combined_seurat_object, expression_filter_number, no_genes_label){
+
+cells <- combined_seurat_object
+Idents(cells) <- "orig.ident"
+avg.cells <- as.data.frame(log1p(AverageExpression(cells, verbose = FALSE)$RNA))
+avg.cells$gene <- rownames(avg.cells)
+
+x4 <- as.data.frame(log1p(AverageExpression(cells, verbose = FALSE)$RNA))
+x4 <- data.table::as.data.table(x4, keep.rownames = TRUE)
+x4$contexp <- (x4$wtten)/(x4$btxten)
+#get all genes with avg expression greater than one, eliminating all genes with absolute value of (wt/pet) as Infinite(e.g. divide by zero), then add those labels to the plot for wt
+x4 <- as.data.table(x4)[is.finite(contexp)]
+x4 <- x4[ !(wtten < expression_filter_number),] 
+x4 <- x4 %>% arrange(desc(abs(contexp)))
+genes.to.label <- head(x4$rn, n=no_genes_label)
+
+p1 <- ggplot(avg.cells, aes(wtten, btxten)) + geom_point(colour="red") + ggtitle("Whole dataset WT vs BTX")
+p1 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+p1
+return(genes.to.label)
+}
+
+
+
+btx_wt_diff_exp_label_combined<- function(combined_seurat_object, expression_filter_number, no_genes_label){
+
+cells <- combined_seurat_object
+Idents(cells) <- "orig.ident"
+avg.cells <- as.data.frame(log1p(AverageExpression(cells, verbose = FALSE)$RNA))
+avg.cells$gene <- rownames(avg.cells)
+
+x4 <- as.data.frame(log1p(AverageExpression(cells, verbose = FALSE)$RNA))
+x4 <- data.table::as.data.table(x4, keep.rownames = TRUE)
+x4$contexp <- (x4$btxten)/(x4$wtten)
+#get all genes with avg expression greater than one, eliminating all genes with absolute value of (wt/pet) as Infinite(e.g. divide by zero), then add those labels to the plot for wt
+x4 <- as.data.table(x4)[is.finite(contexp)]
+x4 <- x4[ !(btxten < expression_filter_number),] 
+x4 <- x4 %>% arrange(desc(abs(contexp)))
+genes.to.label <- head(x4$rn, n=no_genes_label)
+
+p1 <- ggplot(avg.cells, aes(wtten, btxten)) + geom_point(colour="red") + ggtitle("Whole dataset WT vs BTX")
+p1 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+p1
+
+return(genes.to.label)
+}
+
+#wt_btx_diff_exp_label_combined(force_combined, 0.5, 50) + btx_wt_diff_exp_label_combined(force_combined, 0.5, 50)
+
+
+wt_pet_diff_exp_label_combined<- function(combined_seurat_object, expression_filter_number, no_genes_label){
+
+cells <- combined_seurat_object
+Idents(cells) <- "orig.ident"
+avg.cells <- as.data.frame(log1p(AverageExpression(cells, verbose = FALSE)$RNA))
+avg.cells$gene <- rownames(avg.cells)
+
+x4 <- as.data.frame(log1p(AverageExpression(cells, verbose = FALSE)$RNA))
+x4 <- data.table::as.data.table(x4, keep.rownames = TRUE)
+x4$contexp <- (x4$wtten)/(x4$petten)
+#get all genes with avg expression greater than one, eliminating all genes with absolute value of (wt/pet) as Infinite(e.g. divide by zero), then add those labels to the plot for wt
+x4 <- as.data.table(x4)[is.finite(contexp)]
+x4 <- x4[ !(wtten < expression_filter_number),] 
+x4 <- x4 %>% arrange(desc(abs(contexp)))
+genes.to.label <- head(x4$rn, n=no_genes_label)
+
+p1 <- ggplot(avg.cells, aes(wtten, petten)) + geom_point(colour="red") + ggtitle("Whole dataset WT vs cacnb1 -/-")
+p1 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+p1
+
+#return(genes.to.label)
+}
+
+pet_wt_diff_exp_label_combined<- function(combined_seurat_object, expression_filter_number, no_genes_label){
+
+cells <- combined_seurat_object
+Idents(cells) <- "orig.ident"
+avg.cells <- as.data.frame(log1p(AverageExpression(cells, verbose = FALSE)$RNA))
+avg.cells$gene <- rownames(avg.cells)
+
+x4 <- as.data.frame(log1p(AverageExpression(cells, verbose = FALSE)$RNA))
+x4 <- data.table::as.data.table(x4, keep.rownames = TRUE)
+x4$contexp <- (x4$petten)/(x4$wtten)
+#get all genes with avg expression greater than one, eliminating all genes with absolute value of (wt/pet) as Infinite(e.g. divide by zero), then add those labels to the plot for wt
+x4 <- as.data.table(x4)[is.finite(contexp)]
+x4 <- x4[ !(petten < expression_filter_number),] 
+x4 <- x4 %>% arrange(desc(abs(contexp)))
+genes.to.label <- head(x4$rn, n=no_genes_label)
+
+p1 <- ggplot(avg.cells, aes(wtten, petten)) + geom_point(colour="red") + ggtitle("Whole dataset WT vs cacnb1 -/-")
+p1 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+p1
+#return(genes.to.label)
+}
+
+wt_pet_diff_exp_label_combined(force_combined, 0.5, 50) + pet_wt_diff_exp_label_combined(force_combined, 0.5, 50)
+
+
+wt_btx_list <- wt_btx_diff_exp_label_combined(force_combined, 0.25, 300)
+wt_pet_list <- wt_pet_diff_exp_label_combined(force_combined, 0.25, 300)
+btx_wt_list <- btx_wt_diff_exp_label_combined(force_combined, 0.25, 300)
+pet_wt_list <- pet_wt_diff_exp_label_combined(force_combined, 0.25, 300)
+wt_up_comb <- intersect(wt_btx_list, wt_pet_list)
+para_up_comb <- intersect(btx_wt_list, pet_wt_list)
+
+
+```
+
+
+```{r}
+##THIS IS FOR COUNTING THE NUMBER OF CELLS PER CLUSTER BETWEEN CONDITIONS IN INTEGRATED ANALYSIS
+
+
+library(data.table)
+library(magrittr)
+
+## extract meta data
+md <- force_combined_no_20@meta.data %>% as.data.table
+# the resulting md object has one "row" per cell
+
+## count the number of cells per unique combinations of "Sample" and "seurat_clusters"
+md[, .N, by = c("orig.ident", "seurat_clusters")]
+
+## with additional casting after the counting
+md[, .N, by = c("orig.ident", "seurat_clusters")] %>% dcast(., orig.ident ~ seurat_clusters, value.var = "N")
+
+
+```
+
+
+```{r}
+
+
+fc_20_res05 <- ScaleData(force_combined_cluster_20_dropped, verbose = FALSE)
+fc_20_res05 <- RunPCA(force_combined_cluster_20_dropped, npcs = 15, verbose = FALSE)
+fc_20_res05 <- RunUMAP(force_combined_cluster_20_dropped, reduction = "pca", dims = 1:15)
+fc_20_res05 <- FindNeighbors(force_combined_cluster_20_dropped, reduction = "pca", dims = 1:15)
+fc_20_res05 <- FindClusters(force_combined_cluster_20_dropped, resolution = 0.5)
+
+
+
+```
+
+
+
+
